@@ -9,3 +9,77 @@
 {"dataset": "CoNLL2003", "name": "ORG", "description": "organization entities are limited to companies, corporations, agencies, institutions and other groups of people.", "description_source": "ACE2005 annotation guidelines"}
 {"dataset": "CoNLL2003", "name": "LOC", "description": "location entities are limited to geographical entities such as geographical areas and landmasses, mountains, bodies of water, and geological formations.", "description_source": "ACE2005 annotation guidelines"}
 {"dataset": "CoNLL2003", "name": "MISC", "description": "examples of miscellaneous entities include events, nationalities, products and works of art.", "description_source": "MRC4NER Github repo"}
+{"dataset": "FewNERD", "name": "art", "description": "artwork", "description_source": ""}
+{"dataset": "FewNERD", "name": "building", "description": "building", "description_source": ""}
+{"dataset": "FewNERD", "name": "event", "description": "event", "description_source": ""}
+{"dataset": "FewNERD", "name": "location", "description": "location", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization", "description": "organization", "description_source": ""}
+{"dataset": "FewNERD", "name": "other", "description": "other", "description_source": ""}
+{"dataset": "FewNERD", "name": "person", "description": "person", "description_source": ""}
+{"dataset": "FewNERD", "name": "product", "description": "product", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-painting", "description": "art, painting", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-actor", "description": "person, actor", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-artist/author", "description": "person, artist author", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-writtenart", "description": "art, writtenart", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-director", "description": "person, director", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-other", "description": "person, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-other", "description": "organization, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-company", "description": "organization, company", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-sportsleague", "description": "organization, sportsleague", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-sportsteam", "description": "organization, sportsteam", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-car", "description": "product, car", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-protest", "description": "event, protest", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-government/governmentagency", "description": "organization, government governmentagency", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-biologything", "description": "other, biologything", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-GPE", "description": "location, GPE", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-other", "description": "location, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-athlete", "description": "person, athlete", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-broadcastprogram", "description": "art, broadcastprogram", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-other", "description": "building, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-other", "description": "product, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-weapon", "description": "product, weapon", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-airport", "description": "building, airport", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-sportsfacility", "description": "building, sportsfacility", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-scholar", "description": "person, scholar", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-other", "description": "event, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-music", "description": "art, music", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-language", "description": "other, language", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-chemicalthing", "description": "other, chemicalthing", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-film", "description": "art, film", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-hospital", "description": "building, hospital", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-law", "description": "other, law", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-airplane", "description": "product, airplane", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-road/railway/highway/transit", "description": "location, road railway highway transit", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-soldier", "description": "person, soldier", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-mountain", "description": "location, mountain", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-education", "description": "organization, education", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-software", "description": "product, software", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-media/newspaper", "description": "organization, media newspaper", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-island", "description": "location, island", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-bodiesofwater", "description": "location, bodiesofwater", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-library", "description": "building, library", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-astronomything", "description": "other, astronomything", "description_source": ""}
+{"dataset": "FewNERD", "name": "person-politician", "description": "person, politician", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-hotel", "description": "building, hotel", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-game", "description": "product, game", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-award", "description": "other, award", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-sportsevent", "description": "event, sportsevent", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-showorganization", "description": "organization, showorganization", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-educationaldegree", "description": "other, educationaldegree", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-theater", "description": "building, theater", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-disease", "description": "other, disease", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-election", "description": "event, election", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-politicalparty", "description": "organization, politicalparty", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-currency", "description": "other, currency", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-attack/battle/war/militaryconflict", "description": "event, attack battle war militaryconflict", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-ship", "description": "product, ship", "description_source": ""}
+{"dataset": "FewNERD", "name": "building-restaurant", "description": "building, restaurant", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-livingthing", "description": "other, livingthing", "description_source": ""}
+{"dataset": "FewNERD", "name": "art-other", "description": "art, other", "description_source": ""}
+{"dataset": "FewNERD", "name": "event-disaster", "description": "event, disaster", "description_source": ""}
+{"dataset": "FewNERD", "name": "organization-religion", "description": "organization, religion", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-medical", "description": "other, medical", "description_source": ""}
+{"dataset": "FewNERD", "name": "location-park", "description": "location, park", "description_source": ""}
+{"dataset": "FewNERD", "name": "other-god", "description": "other, god", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-food", "description": "product, food", "description_source": ""}
+{"dataset": "FewNERD", "name": "product-train", "description": "product, train", "description_source": ""}
