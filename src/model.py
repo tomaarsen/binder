@@ -1,11 +1,14 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple, List, Union, Dict
+from typing import Optional, Tuple, List, Union, Dict, TYPE_CHECKING
 import torch
 from torch import nn
 import torch.nn.functional as F
 import numpy as np
-from transformers import PreTrainedModel, AutoModel, AutoConfig
+from transformers import PreTrainedModel, AutoModel, AutoConfig, PretrainedConfig
 from transformers.file_utils import ModelOutput
+from src.config import BinderConfig
+
+
 
 
 def tiny_value_of_dtype(dtype: torch.dtype):
@@ -55,7 +58,7 @@ def masked_log_softmax(vector: torch.Tensor, mask: torch.BoolTensor, dim: int = 
 
 def contrastive_loss(
     scores: torch.FloatTensor,
-    positions: Union[List[int], Tuple[List[int], List[int]]],
+    positions: Union[int, List[int], Tuple[List[int], List[int]]],
     mask: torch.BoolTensor,
     prob_mask: torch.BoolTensor = None,
 ) -> torch.FloatTensor:
@@ -69,11 +72,30 @@ def contrastive_loss(
         batch_indices = list(range(batch_size))
         log_probs = log_probs[batch_indices, start_positions, end_positions]
     else:
+        # breakpoint()
+        # log softmax ~= x - max(x)
+        # -inf values are essentially ignored, unlike 0
+        # so, ~= scores - max(scores)
+        # the 'max' is taken over the hidden size dimension,
+        # so batch_size x num_classes separate 'max' calls
+        # tensor - tensor.exp().sum().log() <- definition of log softmax
+        # exact definition of log softmax in our context
+        # vector = scores + (mask + small).log()
+        # vector - vector.exp().sum().log()
         log_probs = masked_log_softmax(scores, mask)
         batch_indices = list(range(batch_size))
         log_probs = log_probs[batch_indices, positions]
     if prob_mask is not None:
         log_probs = log_probs * prob_mask
+    """
+    for start_negative_mask/end_negative_mask/span_negative_mask:
+    objective is to minimize loss
+    so, maximize log_probs[:,0]
+    so, high [CLS] score, but low unmasked max score
+    so, increase [CLS], decrease unmasked score, ignore masked score
+
+
+    """
     return - log_probs.mean()
 
 
@@ -89,6 +111,8 @@ class BinderModelOutput(ModelOutput):
 
 
 class Binder(PreTrainedModel):
+
+    config_class: PretrainedConfig = BinderConfig
 
     def __init__(self, config):
         super().__init__(config)
@@ -132,11 +156,12 @@ class Binder(PreTrainedModel):
             config=hf_config,
             add_pooling_layer=False
         )
-        self.type_encoder = AutoModel.from_pretrained(
-            config.pretrained_model_name_or_path,
-            config=hf_config,
-            add_pooling_layer=False
-        )
+        self.type_encoder = self.text_encoder
+        # self.type_encoder = AutoModel.from_pretrained(
+        #     config.pretrained_model_name_or_path,
+        #     config=hf_config,
+        #     add_pooling_layer=False
+        # )
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -170,6 +195,22 @@ class Binder(PreTrainedModel):
         return_dict: bool = None,
     ):
         return_dict = return_dict if return_dict is not None else self.hf_config.use_return_dict
+        """
+        >>> len(pickle.dumps(input_ids))
+        33172
+        >>> len(pickle.dumps(attention_mask))
+        4500
+        >>> len(pickle.dumps(token_type_ids))
+        33172
+        >>> len(pickle.dumps(type_input_ids))
+        593
+        >>> len(pickle.dumps(type_attention_mask))
+        593
+        >>> len(pickle.dumps(type_token_type_ids))
+        4
+        >>> len(pickle.dumps(ner))
+        11 428 799
+        """
 
         outputs = self.text_encoder(
             input_ids,
@@ -179,6 +220,9 @@ class Binder(PreTrainedModel):
         )
         # batch_size x seq_length x hidden_size
         sequence_output = outputs[0]
+        sequence_output[~attention_mask, :] = 0
+        # sequence_output = sequence_output.to_sparse()
+        # 2713344 / 3145728 => 86% empty
 
         type_outputs = self.type_encoder(
             type_input_ids.squeeze(0),
@@ -188,11 +232,14 @@ class Binder(PreTrainedModel):
         )
         # num_types x hidden_size
         type_output = type_outputs[0][:, 0]
+        # del type_outputs
 
         batch_size, seq_length, _ = sequence_output.size()
         num_types, _ = type_output.size()
 
         # num_types x hidden_size
+        # Normalize the embedding dimension
+        # TODO: Experiment with `self.dropout(F.normalize(...))`
         type_start_output = F.normalize(self.dropout(self.type_start_linear(type_output)), dim=-1)
         type_end_output = F.normalize(self.dropout(self.type_end_linear(type_output)), dim=-1)
         # batch_size x seq_length x hidden_size
@@ -203,6 +250,22 @@ class Binder(PreTrainedModel):
         start_scores = self.start_logit_scale.exp() * type_start_output.unsqueeze(0) @ sequence_start_output.transpose(1, 2)
         end_scores = self.end_logit_scale.exp() * type_end_output.unsqueeze(0) @ sequence_end_output.transpose(1, 2)
 
+        # del type_start_output
+        # del type_end_output 
+        # del sequence_start_output
+        # del sequence_end_output
+
+        """
+        At batch_size 16, sequence_output is 12MB
+        sequence_output.unsqueeze(2).expand(-1, -1, seq_length, -1) is 3GB
+        Concatenated together is 6GB
+        >>> span_output.shape
+        torch.Size([16, 256, 256, 1536])
+        >>> span_output.nelement() * span_output.element_size() / 1024 ** 3
+        6.0
+        """
+
+        # NOTE: Super expensive (hidden_size=768)
         # batch_size x seq_length x seq_length x hidden_size*2
         span_output = torch.cat(
             [
@@ -211,35 +274,62 @@ class Binder(PreTrainedModel):
             ],
             dim=3
         )
+        # 87% empty if sequence_output has attention masking applied, versus 0 otherwise
+        # TODO: The upper diagonal and lower diagonal are identical, other than the order of the two token embeddings
+        # span_output = torch.tril(span_output)
+        # TODO: Investigate if this works like intended ^^
+        # EDIT: It does not:
+        # >>> span_output[0][0][1]
+        # tensor([-0.2840,  0.0082,  0.0000,  ...,  0.0000,  0.0000,  0.0000],
+        #     device='cuda:0', grad_fn=<SelectBackward0>)
+        # >>> span_output[0][1][0]
+        # tensor([0.0808, 0.0000, 0.0000,  ..., 0.0000, 0.0000, 0.0000], device='cuda:0',
+        #     grad_fn=<SelectBackward0>)
+        # ^^ One of them should be all zeros
 
         # span_width_embeddings
         if self.width_embeddings is not None:
             range_vector = torch.cuda.LongTensor(seq_length, device=sequence_output.device).fill_(1).cumsum(0) - 1
             span_width = range_vector.unsqueeze(0) - range_vector.unsqueeze(1) + 1
+            # del range_vector
             # seq_length x seq_length x hidden_size
             span_width_embeddings = self.width_embeddings(span_width * (span_width > 0))
+            # del span_width
+            # print(span_output.shape, span_width_embeddings.shape)
+            # NOTE: torch.cat is a bit expensive here:
             span_output = torch.cat([
                 span_output, span_width_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)], dim=3)
+            # del span_width_embeddings
 
-        # batch_size x seq_length x seq_length x hidden_size
+        # batch_size x (seq_length x seq_length) x hidden_size
         span_linear_output = F.normalize(
             self.dropout(self.span_linear(span_output)).view(batch_size, seq_length * seq_length, -1), dim=-1
         )
+        # For all combinations of tokens, you get this one embedding with 128
+        # What if we don't consider literally *all* combinations? Token 250 vs token 240 isn't very interesting,
+        # they're probably both 0
+
+        # del span_output
         # num_types x hidden_size
         type_linear_output = F.normalize(self.dropout(self.type_span_linear(type_output)), dim=-1)
+        # del type_output
 
         span_scores = self.span_logit_scale.exp() * type_linear_output.unsqueeze(0) @ span_linear_output.transpose(1, 2)
         span_scores = span_scores.view(batch_size, num_types, seq_length, seq_length)
+        # del type_linear_output
+        # del span_linear_output
 
         total_loss = None
         if ner is not None:
             flat_start_scores = start_scores.view(batch_size * num_types, seq_length)
             flat_end_scores = end_scores.view(batch_size * num_types, seq_length)
             flat_span_scores = span_scores.view(batch_size * num_types, seq_length, seq_length)
+            # Optimize start_negative_mask as every row is very similar, only exceptions are 0 for gold entity span start.
             start_negative_mask = ner["start_negative_mask"].view(batch_size * num_types, seq_length)
             end_negative_mask = ner["end_negative_mask"].view(batch_size * num_types, seq_length)
             span_negative_mask = ner["span_negative_mask"].view(batch_size * num_types, seq_length, seq_length)
 
+            # Threshold losses to update [CLS]
             start_threshold_loss = contrastive_loss(flat_start_scores, 0, start_negative_mask)
             end_threshold_loss = contrastive_loss(flat_end_scores, 0, end_negative_mask)
             span_threshold_loss = contrastive_loss(flat_span_scores, (0, 0), span_negative_mask)
@@ -250,14 +340,30 @@ class Binder(PreTrainedModel):
                 self.span_loss_weight * span_threshold_loss
             )
 
-            ner_indices = ner["example_indices"]
+            # Losses against examples
+            # Tuple of [num_spans, num_spans]:
+            # [[0, 0, 0, 1, 1, 2, 3, 4, 5, ...], [1, 6, 0, 6, 1, 3, 2, 4, 4, ...]]
+            ner_indices = ner["example_indices"]  # <- I think used to select one specific example
             ner_starts, ner_ends = ner["example_starts"], ner["example_ends"]
-            ner_start_masks, ner_end_masks = ner["example_start_masks"], ner["example_end_masks"]
-            ner_span_masks = ner["example_span_masks"]
+            # num_spans (e.g. 45) x seq_length
+            # ner_start_masks, ner_end_masks = ner["example_start_masks"], ner["example_end_masks"]
+            # ner_span_masks = ner["example_span_masks"]
 
-            start_loss = contrastive_loss(start_scores[ner_indices], ner_starts, ner_start_masks)
-            end_loss = contrastive_loss(end_scores[ner_indices], ner_ends, ner_end_masks)
-            span_loss = contrastive_loss(span_scores[ner_indices], (ner_starts, ner_ends), ner_span_masks)
+            # No longer mask away the example gold span that we're interested in now
+            example_ids = list(range(len(ner_starts)))
+            start_negative_mask = start_negative_mask.view(batch_size, num_types, seq_length)[ner_indices]
+            start_negative_mask[example_ids, ner_starts] = 1
+            end_negative_mask = end_negative_mask.view(batch_size, num_types, seq_length)[ner_indices]
+            end_negative_mask[example_ids, ner_ends] = 1
+            span_negative_mask = span_negative_mask.view(batch_size, num_types, seq_length, seq_length)[ner_indices]
+            span_negative_mask[example_ids, ner_starts, ner_ends] = 1
+
+            # start_scores[ner_indices] should be num_classes x seq_length
+            # ner_starts is List[int]
+            # ner_start_masks should also be num_classes x seq_length
+            start_loss = contrastive_loss(start_scores[ner_indices], ner_starts, start_negative_mask)
+            end_loss = contrastive_loss(end_scores[ner_indices], ner_ends, end_negative_mask)
+            span_loss = contrastive_loss(span_scores[ner_indices], (ner_starts, ner_ends), span_negative_mask)
 
             total_loss = (
                 self.start_loss_weight * start_loss +
@@ -266,6 +372,7 @@ class Binder(PreTrainedModel):
             )
 
             total_loss = self.ner_loss_weight * total_loss + self.threshold_loss_weight * threshold_loss
+            # Question: Is there any cross-batch interaction?
 
         if not return_dict:
             output = (start_scores, end_scores, span_scores) + outputs[2:]

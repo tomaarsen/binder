@@ -1,5 +1,5 @@
 {
-    "run_name": "64-shot-baseline",
+    "run_name": "64-shot",
     "dataset_name": "FewNERD",
     "model_name_or_path": "roberta-base",
     "train_file": "data/processed/fewnerd_super_64/train.json",
@@ -37,7 +37,7 @@
     "evaluation_strategy": "steps",
     "eval_steps": 80,
     "do_predict": true,
-    "output_dir": "output/fewnerd_super_64_shot_baseline",
+    "output_dir": "output/fewnerd_super_64_shot",
     "resume_from_checkpoint": false,
     "eval_accumulation_steps": 128
 }

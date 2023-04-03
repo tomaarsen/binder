@@ -321,6 +321,8 @@ def main():
         ner_loss_weight=model_args.ner_loss_weight,
     )
     model = Binder(config)
+    # For loading a checkpoint:
+    # model = Binder.from_pretrained(model_args.config_name if model_args.config_name else model_args.model_name_or_path)
 
     # Tokenizer check: this script requires a fast tokenizer.
     if not isinstance(tokenizer, PreTrainedTokenizerFast):
@@ -405,15 +407,15 @@ def main():
 
         # Let's label those examples!
         processed_examples = {
-            "input_ids": [],
-            "attention_mask": [],
-            "token_start_mask": [],
-            "token_end_mask": [],
-            "ner": [],
+            "input_ids": tokenized_examples["input_ids"],
+            "attention_mask": tokenized_examples["attention_mask"],
+            # "token_start_mask": [],
+            # "token_end_mask": [],
+            "ner": []
         }
         # RoBERTa doesn't need token_type_ids.
         if "token_type_ids" in tokenized_examples:
-            processed_examples["token_type_ids"] = []
+            processed_examples["token_type_ids"] = tokenized_examples["token_type_ids"]
 
         for i, offsets in enumerate(offset_mapping):
             # We will label impossible answers with the index of the CLS token.
@@ -442,12 +444,17 @@ def main():
             word_end_chars = examples["word_end_chars"][sample_index]
             for index, (start_char, end_char) in enumerate(offsets):
                 if sequence_ids[index] != 0:
-                    token_start_mask.append(0)
-                    token_end_mask.append(0)
+                    token_start_mask.append(False)
+                    token_end_mask.append(False)
                 else:
-                    token_start_mask.append(int(start_char in word_start_chars))
-                    token_end_mask.append(int(end_char in word_end_chars))
+                    token_start_mask.append(start_char in word_start_chars)
+                    token_end_mask.append(end_char in word_end_chars)
 
+            """
+            # (j - i >= 0) ensures upper diagonal
+            # s * e sets 1 in locations such that the corresponding span (i.e. start and end indices)
+            # line up with start and ends of words.
+            # That way, you never get "at dr" as a span in a sentence "good at dribbling".
             default_span_mask = [
                 [
                     (j - i >= 0) * s * e for j, e in enumerate(token_end_mask)
@@ -455,8 +462,11 @@ def main():
                 for i, s in enumerate(token_start_mask)
             ]
 
+            # num_classes x seq_length
             start_negative_mask = [token_start_mask[:] for _ in entity_type_id_to_str]
             end_negative_mask = [token_end_mask[:] for _ in entity_type_id_to_str]
+
+            # num_classes x seq_length x seq_length
             span_negative_mask = [[x[:] for x in default_span_mask] for _ in entity_type_id_to_str]
 
             # We convert NER into a list of (type_id, start_index, end_index) tuples.
@@ -472,6 +482,7 @@ def main():
                     start_token_index, end_token_index = text_start_index, text_end_index
                     # Move the start_token_index and end_token_index to the two ends of the span.
                     # Note: we could go after the last offset if the span is the last word (edge case).
+                    # Naive conversion from character index to token index
                     while start_token_index <= text_end_index and offsets[start_token_index][0] <= start_char:
                         start_token_index += 1
                     start_token_index -= 1
@@ -490,6 +501,10 @@ def main():
                     })
 
                     # Exclude the start/end of the NER span.
+                    # The other 0's are for [CLS] (edit: set to 1 elsewhere) and non-start or non-end tokens or invalid spans
+
+                    # 0 => "ignore these scores" in contrastive learning of [CLS]
+                    # while 1 => decrease these scores
                     start_negative_mask[entity_type_id][start_token_index] = 0
                     end_negative_mask[entity_type_id][end_token_index] = 0
                     span_negative_mask[entity_type_id][start_token_index][end_token_index] = 0
@@ -497,28 +512,91 @@ def main():
             # Skip training examples without annotations.
             if len(tokenized_ner_annotations) == 0:
                 continue
+            """
 
+            """
+            NOTE: Added before the loop rather than at every iteration
             processed_examples["input_ids"].append(input_ids)
             if "token_type_ids" in tokenized_examples:
-                processed_examples["token_type_ids"].append(tokenized_examples["token_type_ids"][i])
-            processed_examples["attention_mask"].append(tokenized_examples["attention_mask"][i])
-            processed_examples["token_start_mask"].append(token_start_mask)
-            processed_examples["token_end_mask"].append(token_end_mask)
+                processed_examples["token_type_ids"].append(
+                    tokenized_examples["token_type_ids"][i]
+                )
+            processed_examples["attention_mask"].append(
+                tokenized_examples["attention_mask"][i]
+            )
+            """
+            # processed_examples["token_start_mask"].append(token_start_mask)
+            # processed_examples["token_end_mask"].append(token_end_mask)
+
+            # processed_examples["ner"].append({
+            # "annotations": tokenized_ner_annotations,
+            # "start_negative_mask": start_negative_mask,
+            # "end_negative_mask": end_negative_mask,
+            # "span_negative_mask": span_negative_mask, # num_classes x seq_length x seq_length
+            # "token_start_mask": token_start_mask,
+            # "token_end_mask": token_end_mask,
+            # "default_span_mask": default_span_mask,
+            # })
+            # GOAL: Pass `start_token_indices` and `end_token_indices`
+            # instead of `entity_start_chars`, `entity_end_chars`, `offsets`, `text_start_index` and `text_end_index`.
+            entity_types = examples["entity_types"][sample_index]
+            entity_start_chars = examples["entity_start_chars"][sample_index]
+            entity_end_chars = examples["entity_end_chars"][sample_index]
+            entity_start_tokens = []
+            entity_end_tokens = []
+            entity_type_ids = []
+            assert len(entity_types) == len(entity_start_chars) == len(entity_end_chars)
+            for entity_type, start_char, end_char in zip(entity_types, entity_start_chars, entity_end_chars):
+                # Detect if the span is in the text.
+                if offsets[text_start_index][0] <= start_char and offsets[text_end_index][1] >= end_char:
+                    start_token_index, end_token_index = text_start_index, text_end_index
+                    # Move the start_token_index and end_token_index to the two ends of the span.
+                    # Note: we could go after the last offset if the span is the last word (edge case).
+                    # Naive conversion from character index to token index
+                    while start_token_index <= text_end_index and offsets[start_token_index][0] <= start_char:
+                        start_token_index += 1
+                    start_token_index -= 1
+                    entity_start_tokens.append(start_token_index)
+
+                    while offsets[end_token_index][1] >= end_char:
+                        end_token_index -= 1
+                    end_token_index += 1
+                    entity_end_tokens.append(end_token_index)
+
+                    entity_type_ids.append(entity_type_str_to_id[entity_type])
 
             processed_examples["ner"].append({
-                "annotations": tokenized_ner_annotations,
-                "start_negative_mask": start_negative_mask,
-                "end_negative_mask": end_negative_mask,
-                "span_negative_mask": span_negative_mask,
+                "entity_types": entity_type_ids,
+                "entity_start_tokens": entity_start_tokens,
+                "entity_end_tokens": entity_end_tokens,
+                # "entity_start_chars": examples["entity_start_chars"][sample_index],
+                # "entity_end_chars": examples["entity_end_chars"][sample_index],
                 "token_start_mask": token_start_mask,
                 "token_end_mask": token_end_mask,
-                "default_span_mask": default_span_mask,
+                # "offsets": offsets,
+                # "text_start_index": text_start_index,
+                # "text_end_index": text_end_index,
             })
 
+        """
+        NOTE Old data
+        The processed data is MUCH larger
+        >>> len(pickle.dumps(examples))
+        30688
+        >>> len(pickle.dumps(processed_examples))
+        103207595
+        >>> len(pickle.dumps(processed_examples["ner"]))
+        103067181
+        >>> len(pickle.dumps({k:v for k, v in processed_examples.items() if k != "ner"}))
+        224990
+
+        NOTE: For 64-shot-no-ner-preprocessing-v1
+        >>> len(pickle.dumps(processed_examples))
+        320348
+        """
         return processed_examples
 
     if training_args.do_train:
-
         if "train" not in raw_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = raw_datasets["train"]
@@ -531,7 +609,7 @@ def main():
                 prepare_train_features,
                 batched=True,
                 num_proc=data_args.preprocessing_num_workers,
-                remove_columns=column_names,
+                remove_columns=column_names,  # set(column_names) - {"entity_types", "entity_start_chars", "entity_end_chars", "token_start_mask", "token_end_mask"},
                 load_from_cache_file=not data_args.overwrite_cache,
                 desc="Running tokenizer on train dataset",
             )
@@ -638,6 +716,8 @@ def main():
         type_input_ids=tokenized_descriptions["input_ids"],
         type_attention_mask=tokenized_descriptions["attention_mask"],
         type_token_type_ids=tokenized_descriptions["token_type_ids"] if "token_type_ids" in tokenized_descriptions else None,
+        entity_type_id_to_str=entity_type_id_to_str,
+        entity_type_str_to_id=entity_type_str_to_id,
     )
 
     # Post-processing:
