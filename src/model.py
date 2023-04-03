@@ -157,11 +157,6 @@ class Binder(PreTrainedModel):
             add_pooling_layer=False
         )
         self.type_encoder = self.text_encoder
-        # self.type_encoder = AutoModel.from_pretrained(
-        #     config.pretrained_model_name_or_path,
-        #     config=hf_config,
-        #     add_pooling_layer=False
-        # )
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -195,22 +190,6 @@ class Binder(PreTrainedModel):
         return_dict: bool = None,
     ):
         return_dict = return_dict if return_dict is not None else self.hf_config.use_return_dict
-        """
-        >>> len(pickle.dumps(input_ids))
-        33172
-        >>> len(pickle.dumps(attention_mask))
-        4500
-        >>> len(pickle.dumps(token_type_ids))
-        33172
-        >>> len(pickle.dumps(type_input_ids))
-        593
-        >>> len(pickle.dumps(type_attention_mask))
-        593
-        >>> len(pickle.dumps(type_token_type_ids))
-        4
-        >>> len(pickle.dumps(ner))
-        11 428 799
-        """
 
         outputs = self.text_encoder(
             input_ids,
@@ -232,14 +211,12 @@ class Binder(PreTrainedModel):
         )
         # num_types x hidden_size
         type_output = type_outputs[0][:, 0]
-        # del type_outputs
 
         batch_size, seq_length, _ = sequence_output.size()
         num_types, _ = type_output.size()
 
         # num_types x hidden_size
         # Normalize the embedding dimension
-        # TODO: Experiment with `self.dropout(F.normalize(...))`
         type_start_output = F.normalize(self.dropout(self.type_start_linear(type_output)), dim=-1)
         type_end_output = F.normalize(self.dropout(self.type_end_linear(type_output)), dim=-1)
         # batch_size x seq_length x hidden_size
@@ -249,21 +226,6 @@ class Binder(PreTrainedModel):
         # batch_size x num_types x seq_length
         start_scores = self.start_logit_scale.exp() * type_start_output.unsqueeze(0) @ sequence_start_output.transpose(1, 2)
         end_scores = self.end_logit_scale.exp() * type_end_output.unsqueeze(0) @ sequence_end_output.transpose(1, 2)
-
-        # del type_start_output
-        # del type_end_output 
-        # del sequence_start_output
-        # del sequence_end_output
-
-        """
-        At batch_size 16, sequence_output is 12MB
-        sequence_output.unsqueeze(2).expand(-1, -1, seq_length, -1) is 3GB
-        Concatenated together is 6GB
-        >>> span_output.shape
-        torch.Size([16, 256, 256, 1536])
-        >>> span_output.nelement() * span_output.element_size() / 1024 ** 3
-        6.0
-        """
 
         # NOTE: Super expensive (hidden_size=768)
         # batch_size x seq_length x seq_length x hidden_size*2
@@ -291,15 +253,12 @@ class Binder(PreTrainedModel):
         if self.width_embeddings is not None:
             range_vector = torch.cuda.LongTensor(seq_length, device=sequence_output.device).fill_(1).cumsum(0) - 1
             span_width = range_vector.unsqueeze(0) - range_vector.unsqueeze(1) + 1
-            # del range_vector
             # seq_length x seq_length x hidden_size
             span_width_embeddings = self.width_embeddings(span_width * (span_width > 0))
-            # del span_width
             # print(span_output.shape, span_width_embeddings.shape)
             # NOTE: torch.cat is a bit expensive here:
             span_output = torch.cat([
                 span_output, span_width_embeddings.unsqueeze(0).expand(batch_size, -1, -1, -1)], dim=3)
-            # del span_width_embeddings
 
         # batch_size x (seq_length x seq_length) x hidden_size
         span_linear_output = F.normalize(
@@ -309,15 +268,11 @@ class Binder(PreTrainedModel):
         # What if we don't consider literally *all* combinations? Token 250 vs token 240 isn't very interesting,
         # they're probably both 0
 
-        # del span_output
         # num_types x hidden_size
         type_linear_output = F.normalize(self.dropout(self.type_span_linear(type_output)), dim=-1)
-        # del type_output
 
         span_scores = self.span_logit_scale.exp() * type_linear_output.unsqueeze(0) @ span_linear_output.transpose(1, 2)
         span_scores = span_scores.view(batch_size, num_types, seq_length, seq_length)
-        # del type_linear_output
-        # del span_linear_output
 
         total_loss = None
         if ner is not None:
@@ -346,8 +301,6 @@ class Binder(PreTrainedModel):
             ner_indices = ner["example_indices"]  # <- I think used to select one specific example
             ner_starts, ner_ends = ner["example_starts"], ner["example_ends"]
             # num_spans (e.g. 45) x seq_length
-            # ner_start_masks, ner_end_masks = ner["example_start_masks"], ner["example_end_masks"]
-            # ner_span_masks = ner["example_span_masks"]
 
             # No longer mask away the example gold span that we're interested in now
             example_ids = list(range(len(ner_starts)))
